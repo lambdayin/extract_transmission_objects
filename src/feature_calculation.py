@@ -9,7 +9,7 @@ from scipy import linalg
 from sklearn.cluster import DBSCAN
 from sklearn.neighbors import NearestNeighbors
 
-from .data_structures import Point3D, Grid2D, Voxel3D, SpatialHashGrid, GridKey, VoxelKey
+from data_structures import Point3D, Grid2D, Voxel3D, SpatialHashGrid, GridKey, VoxelKey
 
 class DimensionalFeatureCalculator:
     """
@@ -454,18 +454,23 @@ class FeatureCalculationEngine:
     Main feature calculation engine that coordinates all feature calculations
     """
     
-    def __init__(self, spatial_hash: SpatialHashGrid):
+    def __init__(self, grid_size_2d: float = 5.0, voxel_size_3d: float = 0.5):
         """
         Initialize feature calculation engine
         
         Args:
-            spatial_hash: Spatial hash grid structure
+            grid_size_2d: Size of 2D grid cells
+            voxel_size_3d: Size of 3D voxel cells
         """
-        self.spatial_hash = spatial_hash
+        self.grid_size_2d = grid_size_2d
+        self.voxel_size_3d = voxel_size_3d
         self.dimensional_calculator = DimensionalFeatureCalculator()
         self.grid_calculator = GridFeatureCalculator()
-        self.neighborhood_analyzer = NeighborhoodAnalyzer(spatial_hash)
         self.clf_analyzer = CompassLineFilter()
+        
+        # Cache for calculated features
+        self._voxel_features_cache = {}
+        self._grid_features_cache = {}
     
     def calculate_all_features(self, progress_callback=None) -> Dict[str, any]:
         """
@@ -574,3 +579,68 @@ class FeatureCalculationEngine:
                     candidate_grids.append(grid)
         
         return candidate_grids
+    
+    def calculate_2d_grid_features(self, grid: Grid2D) -> Dict[str, float]:
+        """
+        Calculate 2D grid features as described in paper
+        
+        Args:
+            grid: 2D grid to analyze
+            
+        Returns:
+            Dictionary of calculated features
+        """
+        if grid.key in self._grid_features_cache:
+            return self._grid_features_cache[grid.key]
+        
+        features = self.grid_calculator.calculate_grid_features(grid)
+        self._grid_features_cache[grid.key] = features
+        return features
+    
+    def calculate_3d_dimensional_features(self, voxel: Voxel3D) -> Dict[str, float]:
+        """
+        Calculate 3D dimensional features for a voxel
+        
+        Args:
+            voxel: 3D voxel to analyze
+            
+        Returns:
+            Dictionary of calculated dimensional features
+        """
+        if voxel.key in self._voxel_features_cache:
+            return self._voxel_features_cache[voxel.key]
+        
+        if len(voxel.points) < 3:
+            return {'a1d': 0.0, 'a2d': 0.0, 'a3d': 0.0}
+        
+        # Calculate covariance matrix and eigenvalues
+        cov_matrix = self.dimensional_calculator.calculate_covariance_matrix(voxel.points)
+        eigenvalues = self.dimensional_calculator.calculate_eigenvalues(cov_matrix)
+        features = self.dimensional_calculator.calculate_dimensional_features(eigenvalues)
+        
+        # Store eigenvalues in voxel
+        voxel.eigenvalues = eigenvalues
+        voxel.a1d = features['a1d']
+        voxel.a2d = features['a2d'] 
+        voxel.a3d = features['a3d']
+        
+        # Determine if voxel is linear
+        linearity_threshold = 0.7
+        voxel.is_linear = features['a1d'] >= linearity_threshold
+        
+        # Calculate principal direction if linear
+        if voxel.is_linear:
+            coords = np.array([[p.x, p.y, p.z] for p in voxel.points])
+            centroid = np.mean(coords, axis=0)
+            centered = coords - centroid
+            
+            # SVD to get principal direction
+            try:
+                _, _, vt = np.linalg.svd(centered)
+                voxel.principal_direction = vt[0]
+            except:
+                voxel.principal_direction = None
+        
+        # Cache the results
+        self._voxel_features_cache[voxel.key] = features
+        return features

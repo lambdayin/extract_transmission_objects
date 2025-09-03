@@ -13,17 +13,98 @@ from typing import List, Dict, Tuple
 import logging
 
 # Import all modules for testing
-from data_structures import Point3D, SpatialHashGrid, Grid2D, Voxel3D, GridKey, VoxelKey
-from preprocessing import PointCloudPreprocessor, SyntheticDataGenerator
-from feature_calculation import FeatureCalculationEngine
-from power_line_extraction import PowerLineExtractor
-from pylon_extraction import PylonExtractor
-from optimization import TopologicalOptimizer
-from reconstruction import TransmissionCorridorReconstructor
-from main import TransmissionObjectExtractor
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+try:
+    # Try importing as package
+    from src.data_structures import Point3D, SpatialHashGrid, Grid2D, Voxel3D, GridKey, VoxelKey
+    from src.preprocessing import PointCloudPreprocessor
+    from src.feature_calculation import FeatureCalculationEngine
+    from src.power_line_extraction import PowerLineExtractor
+    from src.pylon_extraction import PylonExtractor
+    from src.optimization import TransmissionCorridorOptimizer
+    from src.reconstruction import TransmissionCorridorReconstructor
+    from src.main import TransmissionObjectExtractor
+except ImportError:
+    # Fallback to direct imports
+    from data_structures import Point3D, SpatialHashGrid, Grid2D, Voxel3D, GridKey, VoxelKey
+    from preprocessing import PointCloudPreprocessor
+    from feature_calculation import FeatureCalculationEngine
+    from power_line_extraction import PowerLineExtractor
+    from pylon_extraction import PylonExtractor
+    from optimization import TransmissionCorridorOptimizer
+    from reconstruction import TransmissionCorridorReconstructor
+    from main import TransmissionObjectExtractor
 
 # Disable logging during tests unless specifically needed
 logging.getLogger().setLevel(logging.ERROR)
+
+
+class SyntheticDataGenerator:
+    """Simple synthetic data generator for testing purposes."""
+    
+    def __init__(self):
+        pass
+    
+    def generate_transmission_corridor_points(self, 
+                                            corridor_length: float = 200.0,
+                                            n_towers: int = 3,
+                                            n_lines: int = 6) -> List[Point3D]:
+        """Generate synthetic transmission corridor point cloud."""
+        points = []
+        
+        # Generate tower points
+        tower_spacing = corridor_length / (n_towers + 1)
+        for i in range(n_towers):
+            x_pos = (i + 1) * tower_spacing - corridor_length / 2
+            tower_points = self._generate_tower_points(x_pos, 0.0, 0.0)
+            points.extend(tower_points)
+        
+        # Generate power line points
+        for line_idx in range(n_lines):
+            y_offset = (line_idx - n_lines/2) * 5.0
+            line_points = self._generate_line_points(-corridor_length/2, corridor_length/2, y_offset, 25.0)
+            points.extend(line_points)
+        
+        return points
+    
+    def _generate_tower_points(self, x_center: float, y_center: float, z_base: float) -> List[Point3D]:
+        """Generate points for a single tower."""
+        points = []
+        tower_height = 40.0
+        base_width = 10.0
+        
+        # Generate tower structure points
+        for height_level in range(0, int(tower_height), 2):
+            current_width = base_width * (1.0 - height_level / tower_height * 0.7)
+            
+            # Create square cross-section
+            for angle in np.linspace(0, 2*np.pi, 16, endpoint=False):
+                x = x_center + current_width * np.cos(angle) / 2
+                y = y_center + current_width * np.sin(angle) / 2
+                z = z_base + height_level
+                
+                points.append(Point3D(x, y, z, 100.0, 1))
+        
+        return points
+    
+    def _generate_line_points(self, x_start: float, x_end: float, y_pos: float, z_height: float) -> List[Point3D]:
+        """Generate points for a power line using catenary shape."""
+        points = []
+        n_points = 50
+        
+        # Simple catenary approximation
+        x_positions = np.linspace(x_start, x_end, n_points)
+        for x in x_positions:
+            # Simple catenary sag
+            sag = 5.0 * (1 - np.cos(2 * np.pi * (x - x_start) / (x_end - x_start)))
+            z = z_height - sag
+            
+            points.append(Point3D(x, y_pos, z, 100.0, 2))
+        
+        return points
 
 
 class TestDataStructures(unittest.TestCase):

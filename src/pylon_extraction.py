@@ -14,11 +14,11 @@ from sklearn.cluster import DBSCAN
 from scipy import ndimage
 import math
 
-from .data_structures import (
+from data_structures import (
     Point3D, Grid2D, TransmissionTower, Insulator, SpatialHashGrid,
     GridKey, TransmissionCorridor
 )
-from .feature_calculation import FeatureCalculationEngine
+from feature_calculation import FeatureCalculationEngine
 
 class PylonCandidateIdentifier:
     """
@@ -385,12 +385,12 @@ class HorizontalDistributionFilter:
             return False  # Too large for a pylon
         
         # Additional check: minimum size (avoid too small clusters)
-        if radius < 2.0:
+        if radius < 1.0:
             return False  # Too small for a pylon
         
         # Check aspect ratio (pylons shouldn't be extremely elongated)
         aspect_ratio = max(x_extent, y_extent) / (min(x_extent, y_extent) + 1e-6)
-        if aspect_ratio > 3.0:
+        if aspect_ratio > 5.0:
             return False  # Too elongated
         
         return True
@@ -610,12 +610,17 @@ class PylonExtractor:
         """
         print("Starting five-step pylon extraction...")
         
-        # Get all grids
+        # Get all grids from spatial hash
+        if not corridor.spatial_hash:
+            print("No spatial hash found in corridor")
+            return []
+            
         all_grids = corridor.spatial_hash.get_all_grids()
         print(f"Processing {len(all_grids)} total grids")
         
         # Step 1: Identify candidates with large height differences
         candidate_grids = self.candidate_identifier.identify_candidates(all_grids)
+        print(f"Step 1 - Found {len(candidate_grids)} candidate grids")
         
         if not candidate_grids:
             print("No pylon candidates found")
@@ -623,6 +628,7 @@ class PylonExtractor:
         
         # Step 2: Moving window analysis
         refined_candidates = self.window_analyzer.analyze_with_moving_window(candidate_grids)
+        print(f"Step 2 - {len(refined_candidates)} candidates after moving window analysis")
         
         if not refined_candidates:
             print("No candidates passed moving window analysis")
@@ -630,6 +636,7 @@ class PylonExtractor:
         
         # Step 3: Vertical continuity check
         continuous_grids = self.continuity_checker.check_vertical_continuity(refined_candidates)
+        print(f"Step 3 - {len(continuous_grids)} grids passed vertical continuity check")
         
         if not continuous_grids:
             print("No grids passed vertical continuity check")
@@ -640,6 +647,7 @@ class PylonExtractor:
             continuous_grids, 
             corridor.spatial_hash
         )
+        print(f"Step 4 - Found {len(grid_clusters)} grid clusters")
         
         if not grid_clusters:
             print("No valid grid clusters found")
@@ -647,9 +655,11 @@ class PylonExtractor:
         
         # Refine clusters by height similarity
         refined_clusters = self.grid_clusterer.refine_clusters_by_height_similarity(grid_clusters)
+        print(f"Step 4 - {len(refined_clusters)} clusters after height refinement")
         
         # Step 5: Filter by horizontal distribution
         valid_clusters = self.distribution_filter.filter_by_horizontal_distribution(refined_clusters)
+        print(f"Step 5 - {len(valid_clusters)} clusters passed horizontal distribution filter")
         
         if not valid_clusters:
             print("No clusters passed horizontal distribution filter")
@@ -663,9 +673,6 @@ class PylonExtractor:
                 towers.append(tower)
         
         print(f"Pylon extraction complete: {len(towers)} towers extracted")
-        
-        # Update corridor with towers
-        corridor.towers = towers
         
         return towers
     

@@ -11,11 +11,11 @@ from sklearn.cluster import DBSCAN
 from sklearn.linear_model import RANSACRegressor
 import math
 
-from .data_structures import (
+from data_structures import (
     Point3D, Voxel3D, Grid2D, PowerLineSegment, SpatialHashGrid, 
     VoxelKey, GridKey, TransmissionCorridor
 )
-from .feature_calculation import FeatureCalculationEngine, CompassLineFilter
+from feature_calculation import FeatureCalculationEngine, CompassLineFilter
 
 class LocalSegmentExtractor:
     """
@@ -26,8 +26,8 @@ class LocalSegmentExtractor:
     def __init__(self, 
                  linearity_threshold: float = 0.7,
                  min_segment_length: float = 5.0,
-                 min_points_per_segment: int = 10,
-                 clustering_eps: float = 2.0):
+                 min_points_per_segment: int = 5,
+                 clustering_eps: float = 5.0):
         """
         Initialize local segment extractor
         
@@ -104,7 +104,7 @@ class LocalSegmentExtractor:
             return {}
         
         # Apply DBSCAN clustering
-        clustering = DBSCAN(eps=self.clustering_eps, min_samples=2)
+        clustering = DBSCAN(eps=self.clustering_eps, min_samples=1)
         cluster_labels = clustering.fit_predict(voxel_centers)
         
         # Group voxels by cluster
@@ -547,28 +547,40 @@ class PowerLineExtractor:
         )
     
     def extract_power_lines(self, 
-                           corridor: TransmissionCorridor,
-                           feature_engine: FeatureCalculationEngine) -> List[PowerLineSegment]:
+                           spatial_grid: SpatialHashGrid,
+                           feature_engine: FeatureCalculationEngine,
+                           height_threshold: float) -> List[PowerLineSegment]:
         """
         Complete power line extraction pipeline
         
         Args:
-            corridor: Transmission corridor with spatial hash
+            spatial_grid: Spatial hash grid with point cloud data
             feature_engine: Feature calculation engine
+            height_threshold: Height threshold for power lines
             
         Returns:
             List of extracted power line segments
         """
         print("Starting power line extraction...")
         
-        # Step 1: Get linear voxels
-        linear_voxels = feature_engine.get_linear_voxels(min_linearity=self.linearity_threshold)
+        # Step 1: Calculate 3D dimensional features for all voxels
+        all_voxels = spatial_grid.get_all_voxels()
+        linear_voxels = []
+        
+        for voxel in all_voxels:
+            if len(voxel.points) >= 3:  # Need minimum points for eigenvalue analysis
+                features = feature_engine.calculate_3d_dimensional_features(voxel)
+                if features and features.get('a1d', 0) >= self.linearity_threshold:
+                    voxel.a1d = features['a1d']
+                    voxel.is_linear = True
+                    linear_voxels.append(voxel)
+        
         print(f"Found {len(linear_voxels)} linear voxels")
         
         # Step 2: Extract local segments
         local_segments = self.local_extractor.extract_local_segments(
             linear_voxels, 
-            height_threshold=self.height_threshold
+            height_threshold=height_threshold
         )
         
         if not local_segments:
@@ -581,13 +593,39 @@ class PowerLineExtractor:
         # Step 4: Assign line IDs and finalize
         for i, line in enumerate(complete_lines):
             line.line_id = i + 1
+            line.confidence = self._calculate_line_confidence(line)
         
         print(f"Power line extraction complete: {len(complete_lines)} lines extracted")
         
-        # Update corridor with power lines
-        corridor.power_lines = complete_lines
-        
         return complete_lines
+    
+    def _calculate_line_confidence(self, line: PowerLineSegment) -> float:
+        """Calculate confidence score for a power line"""
+        if not line.points or len(line.points) < 2:
+            return 0.0
+        
+        # Base score from number of points
+        point_score = min(len(line.points) / 100.0, 1.0)
+        
+        # Length score
+        length_score = min(line.length / 200.0, 1.0)
+        
+        # Linearity score from point alignment
+        if line.direction is not None:
+            coords = np.array([[p.x, p.y, p.z] for p in line.points])
+            centroid = np.mean(coords, axis=0)
+            centered = coords - centroid
+            projections = np.dot(centered, line.direction)
+            line_points = centroid + np.outer(projections, line.direction)
+            perp_distances = np.linalg.norm(centered - (line_points - centroid), axis=1)
+            mean_perp_distance = np.mean(perp_distances)
+            alignment_score = max(0, 1.0 - mean_perp_distance / 5.0)
+        else:
+            alignment_score = 0.0
+        
+        # Combine scores
+        confidence = (point_score + length_score + alignment_score) / 3.0
+        return min(max(confidence, 0.0), 1.0)
     
     def filter_low_voltage_lines(self, 
                                power_lines: List[PowerLineSegment],

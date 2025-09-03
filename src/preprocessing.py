@@ -7,7 +7,7 @@ import numpy as np
 from typing import List, Tuple, Optional
 from scipy import spatial
 import statistics
-from .data_structures import Point3D, SpatialHashGrid, TransmissionCorridor
+from data_structures import Point3D, SpatialHashGrid, TransmissionCorridor
 
 class NoiseRemover:
     """Statistical noise removal based on local point distribution"""
@@ -141,12 +141,50 @@ class PointCloudPreprocessor:
         # Step 4: Create transmission corridor object
         corridor = TransmissionCorridor(
             power_lines=[],
-            towers=[],
+            transmission_towers=[],
             point_cloud=filtered_points,
             spatial_hash=spatial_hash
         )
         
         return corridor
+    
+    def preprocess_point_cloud(self, points: List[Point3D]) -> TransmissionCorridor:
+        """Alias for preprocess method for compatibility"""
+        return self.preprocess(points)
+    
+    def remove_noise(self, points: List[Point3D]) -> List[Point3D]:
+        """Remove noise points using statistical method"""
+        if self.enable_noise_removal and self.noise_remover:
+            return self.noise_remover.remove_noise(points)
+        else:
+            return points.copy()
+    
+    def generate_spatial_hash_grid(self, points: List[Point3D]) -> SpatialHashGrid:
+        """Generate spatial hash grid from point cloud"""
+        spatial_hash = SpatialHashGrid(
+            grid_size_2d=self.grid_size_2d,
+            voxel_size_3d=self.voxel_size_3d
+        )
+        
+        # Update global bounding box first
+        spatial_hash.update_bounding_box(points)
+        
+        # Insert points into spatial hash structure
+        for point in points:
+            spatial_hash.insert_point(point)
+        
+        return spatial_hash
+    
+    def determine_power_line_height_divider(self, points: List[Point3D]) -> float:
+        """Determine height threshold for separating power lines from ground objects"""
+        if not points:
+            return 10.0  # Default height divider
+        
+        analyzer = HeightHistogramAnalyzer()
+        height_analysis = analyzer.analyze_height_distribution(points)
+        
+        # Return the calculated height divider or default value
+        return height_analysis.get('height_divider', 10.0)
     
     def calculate_grid_statistics(self, spatial_hash: SpatialHashGrid) -> dict:
         """
@@ -446,3 +484,22 @@ def generate_synthetic_transmission_data(n_points: int = 100000,
         points.append(Point3D(x=x, y=y, z=z, classification=3))  # Vegetation class
     
     return points
+
+
+class SyntheticDataGenerator:
+    """Generate synthetic transmission corridor data for testing"""
+    
+    def __init__(self):
+        self.n_points = 100000
+        self.corridor_length = 1000.0
+        self.n_towers = 5
+        self.n_lines = 3
+    
+    def generate_transmission_corridor_scene(self) -> List[Point3D]:
+        """Generate complete synthetic transmission corridor scene"""
+        return generate_synthetic_transmission_data(
+            n_points=self.n_points,
+            corridor_length=self.corridor_length,
+            n_towers=self.n_towers,
+            n_lines=self.n_lines
+        )

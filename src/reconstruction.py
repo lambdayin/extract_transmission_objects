@@ -10,8 +10,9 @@ import math
 from scipy.optimize import minimize, differential_evolution
 from sklearn.linear_model import RANSACRegressor
 from dataclasses import dataclass
+from collections import defaultdict
 
-from .data_structures import (
+from data_structures import (
     Point3D, PowerLineSegment, TransmissionTower, Insulator, TransmissionCorridor
 )
 
@@ -829,10 +830,10 @@ class TransmissionCorridorReconstructor:
                 reconstruction_results['power_line_models'].append(line_model)
         
         # Reconstruct towers
-        if corridor.towers:
-            print(f"Reconstructing {len(corridor.towers)} transmission towers...")
+        if corridor.transmission_towers:
+            print(f"Reconstructing {len(corridor.transmission_towers)} transmission towers...")
             
-            for i, tower in enumerate(corridor.towers):
+            for i, tower in enumerate(corridor.transmission_towers):
                 tower_model_result = self.tower_modeler.fit_tower_model(tower)
                 
                 tower_model = {
@@ -863,7 +864,7 @@ class TransmissionCorridorReconstructor:
         
         print("3D reconstruction complete:")
         print(f"  Power lines: {stats.get('successful_line_models', 0)}/{len(corridor.power_lines or [])}")
-        print(f"  Towers: {stats.get('successful_tower_models', 0)}/{len(corridor.towers or [])}")
+        print(f"  Towers: {stats.get('successful_tower_models', 0)}/{len(corridor.transmission_towers or [])}")
         print(f"  Insulators: {len(reconstruction_results['insulator_models'])}")
         
         return reconstruction_results

@@ -8,7 +8,7 @@ from typing import List, Dict, Set, Tuple, Optional
 import math
 from collections import defaultdict
 
-from .data_structures import (
+from data_structures import (
     Point3D, PowerLineSegment, TransmissionTower, TransmissionCorridor
 )
 
@@ -435,7 +435,7 @@ class TransmissionCorridorOptimizer:
         """
         print("Starting transmission corridor optimization...")
         
-        if not corridor.power_lines or not corridor.towers:
+        if not corridor.power_lines or not corridor.transmission_towers:
             print("Warning: No power lines or towers to optimize")
             return {'status': 'no_objects', 'optimized_lines': 0, 'optimized_towers': 0}
         
@@ -443,18 +443,18 @@ class TransmissionCorridorOptimizer:
         print("Analyzing topological connectivity...")
         connectivity_analysis = self.topology_analyzer.analyze_connectivity(
             corridor.power_lines, 
-            corridor.towers
+            corridor.transmission_towers
         )
         
         print(f"Connectivity analysis: {connectivity_analysis['total_connections']} connections found")
         print(f"Connected lines: {connectivity_analysis['connected_lines']}/{len(corridor.power_lines)}")
-        print(f"Connected towers: {connectivity_analysis['connected_towers']}/{len(corridor.towers)}")
+        print(f"Connected towers: {connectivity_analysis['connected_towers']}/{len(corridor.transmission_towers)}")
         
         # Step 2: Check direction consistency
         print("Checking direction consistency...")
         direction_analysis = self.direction_checker.check_direction_consistency(
             corridor.power_lines,
-            corridor.towers,
+            corridor.transmission_towers,
             connectivity_analysis['connections']
         )
         
@@ -465,17 +465,17 @@ class TransmissionCorridorOptimizer:
             print("Filtering interference objects...")
             
             original_line_count = len(corridor.power_lines)
-            original_tower_count = len(corridor.towers)
+            original_tower_count = len(corridor.transmission_towers)
             
             filtered_lines, filtered_towers = self.interference_filter.filter_interference_objects(
                 corridor.power_lines,
-                corridor.towers,
+                corridor.transmission_towers,
                 connectivity_analysis
             )
             
             # Update corridor with filtered objects
             corridor.power_lines = filtered_lines
-            corridor.towers = filtered_towers
+            corridor.transmission_towers = filtered_towers
             
             print(f"Interference filtering:")
             print(f"  Lines: {original_line_count} -> {len(filtered_lines)}")
@@ -484,7 +484,7 @@ class TransmissionCorridorOptimizer:
         # Step 4: Re-analyze after filtering
         final_connectivity = self.topology_analyzer.analyze_connectivity(
             corridor.power_lines, 
-            corridor.towers
+            corridor.transmission_towers
         )
         
         # Compile optimization results
@@ -493,27 +493,27 @@ class TransmissionCorridorOptimizer:
             'original_counts': {
                 'lines': len(corridor.power_lines) if not self.enable_interference_filtering 
                         else original_line_count,
-                'towers': len(corridor.towers) if not self.enable_interference_filtering 
+                'towers': len(corridor.transmission_towers) if not self.enable_interference_filtering 
                          else original_tower_count
             },
             'optimized_counts': {
                 'lines': len(corridor.power_lines),
-                'towers': len(corridor.towers)
+                'towers': len(corridor.transmission_towers)
             },
             'connectivity_analysis': connectivity_analysis,
             'direction_analysis': direction_analysis,
             'final_connectivity': final_connectivity,
             'optimization_summary': {
                 'lines_removed': (original_line_count - len(corridor.power_lines)) if self.enable_interference_filtering else 0,
-                'towers_removed': (original_tower_count - len(corridor.towers)) if self.enable_interference_filtering else 0,
-                'final_connection_ratio': final_connectivity['connection_ratio'],
+                'towers_removed': (original_tower_count - len(corridor.transmission_towers)) if self.enable_interference_filtering else 0,
+                'final_connection_ratio': final_connectivity.get('connection_ratio', 0.0),
                 'direction_consistency_ratio': direction_analysis['consistency_ratio']
             }
         }
         
         print("Optimization complete:")
-        print(f"  Final objects: {len(corridor.power_lines)} lines, {len(corridor.towers)} towers")
-        print(f"  Connection ratio: {final_connectivity['connection_ratio']:.3f}")
+        print(f"  Final objects: {len(corridor.power_lines)} lines, {len(corridor.transmission_towers)} towers")
+        print(f"  Connection ratio: {final_connectivity.get('connection_ratio', 0.0):.3f}")
         print(f"  Direction consistency: {direction_analysis['consistency_ratio']:.3f}")
         
         return optimization_results
@@ -539,21 +539,21 @@ class TransmissionCorridorOptimizer:
             validation_results['issues'].append("No power lines detected")
             validation_results['recommendations'].append("Check height thresholds and linearity parameters")
         
-        if not corridor.towers:
+        if not corridor.transmission_towers:
             validation_results['issues'].append("No transmission towers detected")
             validation_results['recommendations'].append("Check height difference thresholds and clustering parameters")
         
-        if corridor.power_lines and corridor.towers:
+        if corridor.power_lines and corridor.transmission_towers:
             # Analyze connectivity
             connectivity = self.topology_analyzer.analyze_connectivity(
-                corridor.power_lines, corridor.towers
+                corridor.power_lines, corridor.transmission_towers
             )
             
             # Calculate quality metrics
             connection_score = min(1.0, connectivity['connection_ratio'] * 2.0)  # Scale to 0-1
             
             # Check line-to-tower ratio (should be reasonable)
-            line_tower_ratio = len(corridor.power_lines) / len(corridor.towers) if corridor.towers else 0
+            line_tower_ratio = len(corridor.power_lines) / len(corridor.transmission_towers) if corridor.transmission_towers else 0
             ratio_score = 1.0 if 1.0 <= line_tower_ratio <= 5.0 else 0.5
             
             # Overall quality score

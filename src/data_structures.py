@@ -124,11 +124,13 @@ class SpatialHashGrid:
     Implements the paper's sparse grid method using spatial hashing matrix
     """
     
-    def __init__(self, grid_size_2d: float = 5.0, voxel_size_3d: float = 0.5):
+    def __init__(self, x_min=None, x_max=None, y_min=None, y_max=None, z_min=None, z_max=None, 
+                 grid_size_2d: float = 5.0, voxel_size_3d: float = 0.5):
         """
         Initialize spatial hash grid
         
         Args:
+            x_min, x_max, y_min, y_max, z_min, z_max: Bounding box (will be auto-computed if None)
             grid_size_2d: Size of 2D grid cells (default 5m as in paper)
             voxel_size_3d: Size of 3D voxel cells (default 0.5m as in paper)
         """
@@ -140,12 +142,22 @@ class SpatialHashGrid:
         self.voxel_3d_hash: Dict[VoxelKey, Voxel3D] = {}
         
         # Bounding box for normalization
-        self.x_min_global = float('inf')
-        self.x_max_global = float('-inf')
-        self.y_min_global = float('inf')
-        self.y_max_global = float('-inf')
-        self.z_min_global = float('inf')
-        self.z_max_global = float('-inf')
+        if all(v is not None for v in [x_min, x_max, y_min, y_max, z_min, z_max]):
+            self.x_min_global = x_min
+            self.x_max_global = x_max
+            self.y_min_global = y_min
+            self.y_max_global = y_max
+            self.z_min_global = z_min
+            self.z_max_global = z_max
+            self.bbox_initialized = True
+        else:
+            self.x_min_global = float('inf')
+            self.x_max_global = float('-inf')
+            self.y_min_global = float('inf')
+            self.y_max_global = float('-inf')
+            self.z_min_global = float('inf')
+            self.z_max_global = float('-inf')
+            self.bbox_initialized = False
         
         # Grid-to-voxel mapping for hierarchical structure
         self.grid_to_voxels: Dict[GridKey, Set[VoxelKey]] = defaultdict(set)
@@ -187,6 +199,13 @@ class SpatialHashGrid:
     
     def insert_point(self, point: Point3D):
         """Insert a point into the spatial hash structure"""
+        # Initialize bounding box if needed
+        if not self.bbox_initialized:
+            self.update_bounding_box([point])
+            self.bbox_initialized = True
+        else:
+            self.update_bounding_box([point])
+        
         # Get 2D grid key
         grid_key = self.point_to_grid_key(point)
         
@@ -290,6 +309,14 @@ class SpatialHashGrid:
         """Get all 3D voxels"""
         return list(self.voxel_3d_hash.values())
     
+    def get_all_2d_grids(self) -> Dict[GridKey, Grid2D]:
+        """Get all 2D grids as dictionary"""
+        return self.grid_2d_hash.copy()
+    
+    def get_all_3d_voxels(self) -> Dict[VoxelKey, Voxel3D]:
+        """Get all 3D voxels as dictionary"""
+        return self.voxel_3d_hash.copy()
+    
     def get_grid_count(self) -> int:
         """Get total number of grids"""
         return len(self.grid_2d_hash)
@@ -297,6 +324,10 @@ class SpatialHashGrid:
     def get_voxel_count(self) -> int:
         """Get total number of voxels"""
         return len(self.voxel_3d_hash)
+    
+    def add_point(self, point: Point3D):
+        """Alias for insert_point for compatibility"""
+        self.insert_point(point)
     
     def clear(self):
         """Clear all data structures"""
@@ -311,32 +342,78 @@ class SpatialHashGrid:
         self.y_max_global = float('-inf')
         self.z_min_global = float('inf')
         self.z_max_global = float('-inf')
+        self.bbox_initialized = False
 
 @dataclass
 class PowerLineSegment:
     """Power line segment with geometric properties"""
     points: List[Point3D]
-    start_point: Point3D
-    end_point: Point3D
-    direction: np.ndarray
-    length: float
-    grid_keys: List[GridKey]
-    voxel_keys: List[VoxelKey]
+    start_point: Optional[Point3D] = None
+    end_point: Optional[Point3D] = None
+    direction: Optional[np.ndarray] = None
+    length: float = 0.0
+    grid_keys: Optional[List[GridKey]] = None
+    voxel_keys: Optional[List[VoxelKey]] = None
     is_candidate: bool = True
     line_id: Optional[int] = None
+    confidence: float = 0.0
+    catenary_parameters: Optional['CatenaryParameters'] = None
+    
+    def __post_init__(self):
+        if self.grid_keys is None:
+            self.grid_keys = []
+        if self.voxel_keys is None:
+            self.voxel_keys = []
+        
+        if self.points and len(self.points) >= 2:
+            self.start_point = self.points[0]
+            self.end_point = self.points[-1]
+            
+            # Calculate direction vector
+            start_coords = np.array([self.start_point.x, self.start_point.y, self.start_point.z])
+            end_coords = np.array([self.end_point.x, self.end_point.y, self.end_point.z])
+            direction_vec = end_coords - start_coords
+            self.length = np.linalg.norm(direction_vec)
+            self.direction = direction_vec / self.length if self.length > 0 else np.zeros(3)
+
+@dataclass
+class CatenaryParameters:
+    """Parameters for catenary curve fitting as described in paper Equation (5)"""
+    a: float  # catenary parameter
+    h: float  # horizontal offset
+    k: float  # vertical offset
+    theta: float  # line orientation angle
+    rho: float   # line distance parameter
+    fitting_error: float = 0.0
+
+@dataclass
+class TowerModel:
+    """3D model parameters for tower reconstruction"""
+    tower_type: str  # drum-like, goblet-like, zigzag, cat-head-like
+    height: float
+    base_width: float
+    top_width: float
+    model_parameters: Dict[str, float]
+    gibbs_energy: float = 0.0  # Energy model fitness
 
 @dataclass 
 class TransmissionTower:
     """Transmission tower with properties and location"""
-    center_point: Point3D
-    height: float
-    points: List[Point3D]
-    grid_keys: List[GridKey]
-    wing_length: float
+    center_point: Optional[Point3D] = None
+    height: float = 0.0
+    points: Optional[List[Point3D]] = None
+    grid_keys: Optional[List[GridKey]] = None
+    wing_length: float = 0.0
     tower_type: Optional[str] = None  # drum-like, goblet-like, zigzag, cat-head-like
-    insulators: List['Insulator'] = None
+    insulators: Optional[List['Insulator']] = None
+    confidence: float = 0.0
+    tower_model: Optional[TowerModel] = None
     
     def __post_init__(self):
+        if self.points is None:
+            self.points = []
+        if self.grid_keys is None:
+            self.grid_keys = []
         if self.insulators is None:
             self.insulators = []
 
@@ -346,17 +423,51 @@ class Insulator:
     center_point: Point3D
     points: List[Point3D]
     insulator_type: str = "suspension"  # suspension, tension, etc.
+    length: float = 0.0
+    orientation: Optional[np.ndarray] = None
+
+@dataclass
+class Grid2DFeatures:
+    """2D grid features as described in the paper"""
+    dem: float  # Digital Elevation Model - minimum height
+    dsm: float  # Digital Surface Model - maximum height  
+    height_diff: float  # DSM - DEM
+    point_density: float  # Points per square meter
+    local_max_height: float  # Local maximum height value
+    normalized_dsm: float  # nDSM for topography normalization
+    
+@dataclass
+class Voxel3DFeatures:
+    """3D dimensional features based on eigenvalue analysis"""
+    eigenvalues: Tuple[float, float, float]  # λ1 > λ2 > λ3
+    a1d: float  # Linearity measure: (√λ1 - √λ2) / √λ1
+    a2d: float  # Planarity measure: (√λ2 - √λ3) / √λ1  
+    a3d: float  # Sphericity measure: √λ3 / √λ1
+    is_linear: bool  # True if a1d > linearity_threshold
+    principal_direction: Optional[np.ndarray] = None  # Direction of first eigenvector
+
+@dataclass
+class ConnectivityAnalysis:
+    """Results of topological connectivity analysis"""
+    connected_power_lines: List[int]  # IDs of connected power line segments
+    connected_towers: List[int]       # IDs of connected towers
+    connectivity_score: float         # Overall connectivity measure [0,1]
+    isolated_lines: List[int]         # IDs of isolated line segments
+    isolated_towers: List[int]        # IDs of isolated towers
 
 @dataclass
 class TransmissionCorridor:
     """Complete transmission corridor containing all extracted objects"""
-    power_lines: List[PowerLineSegment]
-    towers: List[TransmissionTower]
-    point_cloud: List[Point3D]
-    spatial_hash: SpatialHashGrid
+    power_lines: Optional[List[PowerLineSegment]] = None
+    transmission_towers: Optional[List[TransmissionTower]] = None  # Renamed for consistency with main.py
+    point_cloud: Optional[List[Point3D]] = None
+    spatial_hash: Optional[SpatialHashGrid] = None
+    processing_metadata: Optional[Dict[str, any]] = None
     
     def __post_init__(self):
         if self.power_lines is None:
             self.power_lines = []
-        if self.towers is None:
-            self.towers = []
+        if self.transmission_towers is None:
+            self.transmission_towers = []
+        if self.processing_metadata is None:
+            self.processing_metadata = {}

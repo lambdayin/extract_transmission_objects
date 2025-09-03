@@ -27,7 +27,7 @@ from preprocessing import PointCloudPreprocessor, SyntheticDataGenerator
 from feature_calculation import FeatureCalculationEngine
 from power_line_extraction import PowerLineExtractor
 from pylon_extraction import PylonExtractor
-from optimization import TopologicalOptimizer
+from optimization import TransmissionCorridorOptimizer
 from reconstruction import TransmissionCorridorReconstructor
 
 # Configure logging
@@ -77,7 +77,7 @@ class TransmissionObjectExtractor:
         
         self.power_line_extractor = PowerLineExtractor()
         self.pylon_extractor = PylonExtractor()
-        self.optimizer = TopologicalOptimizer()
+        self.optimizer = TransmissionCorridorOptimizer()
         self.reconstructor = TransmissionCorridorReconstructor()
         
         # Statistics tracking
@@ -216,7 +216,7 @@ class TransmissionObjectExtractor:
         
         # Step 5: Topological optimization
         logger.info("Step 5: Topological optimization")
-        optimized_corridor = self.optimizer.optimize_corridor(corridor)
+        optimized_corridor = self.optimizer.optimize_extraction_results(corridor)
         
         # Log optimization results
         connectivity_analysis = self.optimizer.analyze_connectivity(
