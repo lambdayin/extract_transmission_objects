@@ -423,7 +423,7 @@ class TransmissionCorridorOptimizer:
         
         self.interference_filter = InterferenceFilter()
     
-    def optimize_extraction_results(self, corridor: TransmissionCorridor) -> Dict[str, any]:
+    def optimize_extraction_results(self, corridor: TransmissionCorridor) -> TransmissionCorridor:
         """
         Complete optimization pipeline for extraction results
         
@@ -437,7 +437,7 @@ class TransmissionCorridorOptimizer:
         
         if not corridor.power_lines or not corridor.transmission_towers:
             print("Warning: No power lines or towers to optimize")
-            return {'status': 'no_objects', 'optimized_lines': 0, 'optimized_towers': 0}
+            return corridor
         
         # Step 1: Analyze topological connectivity
         print("Analyzing topological connectivity...")
@@ -516,7 +516,7 @@ class TransmissionCorridorOptimizer:
         print(f"  Connection ratio: {final_connectivity.get('connection_ratio', 0.0):.3f}")
         print(f"  Direction consistency: {direction_analysis['consistency_ratio']:.3f}")
         
-        return optimization_results
+        return corridor
     
     def validate_transmission_corridor(self, corridor: TransmissionCorridor) -> Dict[str, any]:
         """
@@ -572,3 +572,18 @@ class TransmissionCorridorOptimizer:
                 validation_results['recommendations'].append("Review tower extraction parameters")
         
         return validation_results
+    
+    def analyze_connectivity(self, power_lines: List[PowerLineSegment], 
+                           towers: List[TransmissionTower]) -> Dict[str, any]:
+        """
+        Analyze connectivity between power lines and towers.
+        Delegates to the internal topology analyzer.
+        
+        Args:
+            power_lines: Extracted power line segments
+            towers: Extracted transmission towers
+            
+        Returns:
+            Dictionary containing connectivity analysis results
+        """
+        return self.topology_analyzer.analyze_connectivity(power_lines, towers)

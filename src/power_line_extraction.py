@@ -24,9 +24,9 @@ class LocalSegmentExtractor:
     """
     
     def __init__(self, 
-                 linearity_threshold: float = 0.7,
-                 min_segment_length: float = 5.0,
-                 min_points_per_segment: int = 5,
+                 linearity_threshold: float = 0.5,  # Reduced from 0.7 to 0.5
+                 min_segment_length: float = 3.0,   # Reduced from 5.0 to 3.0  
+                 min_points_per_segment: int = 3,   # Reduced from 5 to 3
                  clustering_eps: float = 5.0):
         """
         Initialize local segment extractor
@@ -103,16 +103,49 @@ class LocalSegmentExtractor:
         if len(voxel_centers) < 2:
             return {}
         
-        # Apply DBSCAN clustering
-        clustering = DBSCAN(eps=self.clustering_eps, min_samples=1)
-        cluster_labels = clustering.fit_predict(voxel_centers)
-        
-        # Group voxels by cluster
-        clusters = defaultdict(list)
-        for i, label in enumerate(cluster_labels):
-            clusters[label].append(linear_voxels[i])
+        # Use simplified spatial clustering instead of DBSCAN for better performance
+        clusters = self._simple_spatial_clustering(linear_voxels, voxel_centers)
         
         return dict(clusters)
+    
+    def _simple_spatial_clustering(self, linear_voxels: List[Voxel3D], 
+                                 voxel_centers: np.ndarray) -> Dict[int, List[Voxel3D]]:
+        """
+        Simple spatial clustering algorithm to replace DBSCAN for better performance
+        """
+        if len(linear_voxels) == 0:
+            return {}
+        
+        clusters = {}
+        processed = set()
+        cluster_id = 0
+        
+        for i, voxel in enumerate(linear_voxels):
+            if i in processed:
+                continue
+                
+            # Start a new cluster
+            cluster_voxels = [voxel]
+            processed.add(i)
+            
+            # Find nearby voxels using simple distance check
+            for j in range(i + 1, len(linear_voxels)):
+                if j in processed:
+                    continue
+                    
+                # Convert lists to numpy arrays for calculation
+                center_i = np.array(voxel_centers[i])
+                center_j = np.array(voxel_centers[j])
+                distance = np.linalg.norm(center_i - center_j)
+                if distance <= self.clustering_eps:
+                    cluster_voxels.append(linear_voxels[j])
+                    processed.add(j)
+            
+            if len(cluster_voxels) >= 1:  # At least 1 voxel per cluster
+                clusters[cluster_id] = cluster_voxels
+                cluster_id += 1
+        
+        return clusters
     
     def _create_segment_from_cluster(self, cluster_voxels: List[Voxel3D]) -> Optional[PowerLineSegment]:
         """
@@ -521,10 +554,10 @@ class PowerLineExtractor:
     """
     
     def __init__(self,
-                 linearity_threshold: float = 0.7,
-                 height_threshold: float = 8.0,
-                 min_segment_length: float = 10.0,
-                 collinearity_threshold: float = 0.8):
+                 linearity_threshold: float = 0.5,   # Reduced from 0.7 to 0.5
+                 height_threshold: float = 5.0,      # Reduced from 8.0 to 5.0
+                 min_segment_length: float = 5.0,    # Reduced from 10.0 to 5.0
+                 collinearity_threshold: float = 0.6): # Reduced from 0.8 to 0.6
         """
         Initialize power line extractor
         

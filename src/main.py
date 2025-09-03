@@ -66,8 +66,8 @@ class TransmissionObjectExtractor:
         self.preprocessor = PointCloudPreprocessor(
             grid_size_2d=grid_size_2d,
             voxel_size_3d=voxel_size_3d,
-            noise_removal_k=noise_removal_k,
-            noise_removal_std_threshold=noise_removal_std_threshold
+            noise_k_neighbors=noise_removal_k,
+            noise_std_multiplier=noise_removal_std_threshold
         )
         
         self.feature_engine = FeatureCalculationEngine(
@@ -114,7 +114,12 @@ class TransmissionObjectExtractor:
             with open(file_path, 'r') as f:
                 for line_num, line in enumerate(f, 1):
                     try:
-                        parts = line.strip().split()
+                        # Try comma-separated first, then space-separated
+                        if ',' in line:
+                            parts = line.strip().split(',')
+                        else:
+                            parts = line.strip().split()
+                        
                         if len(parts) >= 3:
                             x, y, z = float(parts[0]), float(parts[1]), float(parts[2])
                             intensity = float(parts[3]) if len(parts) > 3 else 0.0
@@ -283,17 +288,14 @@ class TransmissionObjectExtractor:
             for key, value in self.processing_stats.items():
                 f.write(f"{key}: {value}\n")
         
-        # Save power line segments
+        # Save power line segments (format matching input file: x,y,z)
         lines_file = os.path.join(output_dir, 'power_lines.txt')
         with open(lines_file, 'w') as f:
-            f.write("# Power Line Segments\n")
-            f.write("# Format: segment_id x1 y1 z1 x2 y2 z2 confidence\n")
+            # Write all points from all power line segments in the same format as input
             for i, line in enumerate(corridor.power_lines):
-                if line.points and len(line.points) >= 2:
-                    start_point = line.points[0]
-                    end_point = line.points[-1]
-                    f.write(f"{i} {start_point.x:.3f} {start_point.y:.3f} {start_point.z:.3f} ")
-                    f.write(f"{end_point.x:.3f} {end_point.y:.3f} {end_point.z:.3f} {line.confidence:.3f}\n")
+                if line.points:
+                    for point in line.points:
+                        f.write(f"{point.x:.3f},{point.y:.3f},{point.z:.3f}\n")
         
         # Save transmission towers
         towers_file = os.path.join(output_dir, 'transmission_towers.txt')

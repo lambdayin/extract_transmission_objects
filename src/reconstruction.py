@@ -785,7 +785,7 @@ class TransmissionCorridorReconstructor:
         self.tower_modeler = ParametricTowerModeler()
         self.insulator_detector = InsulatorDetector()
     
-    def reconstruct_corridor(self, corridor: TransmissionCorridor) -> Dict[str, any]:
+    def reconstruct_corridor(self, corridor: TransmissionCorridor) -> TransmissionCorridor:
         """
         Complete 3D reconstruction of transmission corridor
         
@@ -867,7 +867,7 @@ class TransmissionCorridorReconstructor:
         print(f"  Towers: {stats.get('successful_tower_models', 0)}/{len(corridor.transmission_towers or [])}")
         print(f"  Insulators: {len(reconstruction_results['insulator_models'])}")
         
-        return reconstruction_results
+        return corridor
     
     def _calculate_reconstruction_quality(self, results: Dict[str, any]) -> Dict[str, float]:
         """Calculate overall reconstruction quality metrics"""

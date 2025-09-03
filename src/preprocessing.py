@@ -302,24 +302,30 @@ class HeightHistogramAnalyzer:
                                  peaks: List[Tuple[float, int]]) -> float:
         """
         Calculate height divider for power line segmentation
-        Based on the first significant gap above ground level
+        Based on finding the valley between ground and transmission lines
         """
         if not peaks:
-            # Default to 8m above minimum height (regulatory minimum)
-            return bin_edges[0] + 8.0
+            # Default to reasonable height above minimum
+            min_height = bin_edges[0]
+            max_height = bin_edges[-1]
+            return min_height + (max_height - min_height) * 0.3  # 30% from bottom
         
-        # Find first significant peak (likely first power line layer)
-        peaks_sorted = sorted(peaks, key=lambda x: x[0])  # Sort by height
+        # Find the minimum point (valley) in the histogram
+        # This represents the gap between ground objects and transmission lines
+        valley_index = np.argmin(histogram)
+        valley_height = (bin_edges[valley_index] + bin_edges[valley_index + 1]) / 2
         
-        # Look for the first significant gap
-        # This represents the minimum height between transmission lines and ground objects
-        first_peak_height = peaks_sorted[0][0]
+        # If there's a clear valley, use it
+        min_height = bin_edges[0]
+        max_height = bin_edges[-1]
+        height_range = max_height - min_height
         
-        # Set divider at a reasonable margin below the first power line peak
-        # According to paper analysis, this is typically around 8-16m range
-        height_divider = max(bin_edges[0] + 8.0, first_peak_height - 5.0)
-        
-        return height_divider
+        # For transmission line data, expect the divider to be in lower 20-50% of height range
+        if valley_height < min_height + height_range * 0.8:  # Valley is in reasonable range
+            return valley_height
+        else:
+            # Fall back to using lower portion of height range
+            return min_height + height_range * 0.25  # 25% from bottom
 
 def load_point_cloud_from_las(file_path: str) -> List[Point3D]:
     """

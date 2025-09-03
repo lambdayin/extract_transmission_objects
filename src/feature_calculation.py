@@ -624,8 +624,8 @@ class FeatureCalculationEngine:
         voxel.a2d = features['a2d'] 
         voxel.a3d = features['a3d']
         
-        # Determine if voxel is linear
-        linearity_threshold = 0.7
+        # Determine if voxel is linear (reduced threshold for better detection)
+        linearity_threshold = 0.5  # Reduced from 0.7 to 0.5
         voxel.is_linear = features['a1d'] >= linearity_threshold
         
         # Calculate principal direction if linear
